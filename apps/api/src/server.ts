@@ -1,20 +1,36 @@
-// v0.1.1 - Minimal Express skeleton. Real server + auth + DB comes in v0.2.0.
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
+
+import { env } from './config/env.js';
+import { connectDB } from './config/db.js';
+import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
+import authRoutes from './routes/authRoutes.js';
 import { SHARED_PACKAGE_VERSION } from '@fln/shared';
 
 const app = express();
-const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;
 
 app.use(helmet());
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
-app.use(express.json());
+app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-if (process.env.NODE_ENV !== 'production') {
+if (env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
+
+app.use(
+  '/api',
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, message: 'Too many requests, please try again later.' },
+  }),
+);
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -25,8 +41,29 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 API running on http://localhost:${PORT} (v${SHARED_PACKAGE_VERSION})`);
+app.get('/api/v1', (_req, res) => {
+  res.json({ success: true, message: 'FLN-Assessment API v1', version: SHARED_PACKAGE_VERSION });
 });
+
+app.use('/api/v1/auth', authRoutes);
+
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+async function start() {
+  try {
+    await connectDB();
+    app.listen(env.PORT, () => {
+      console.log(`🚀 API running on http://localhost:${env.PORT} (v${SHARED_PACKAGE_VERSION})`);
+      console.log(`   Health: http://localhost:${env.PORT}/health`);
+      console.log(`   Env:    ${env.NODE_ENV}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+start();
 
 export default app;
