@@ -237,6 +237,11 @@ export interface BestPractice {
   createdAt: string;
 }
 
+export interface SystemSettings {
+  id: string;
+  isImageOptimizationEnabled: boolean;
+}
+
 interface DatabaseSchema {
   users: User[];
   schools: School[];
@@ -252,6 +257,7 @@ interface DatabaseSchema {
   announcements: Announcement[];
   interventions: Intervention[];
   bestPractices: BestPractice[];
+  settings: SystemSettings[];
 }
 
 export class DBStore {
@@ -291,7 +297,8 @@ export class DBStore {
         { name: 'logbook', data: seed.logbook },
         { name: 'announcements', data: seed.announcements },
         { name: 'interventions', data: seed.interventions },
-        { name: 'bestPractices', data: seed.bestPractices }
+        { name: 'bestPractices', data: seed.bestPractices },
+        { name: 'settings', data: seed.settings }
       ];
 
       for (const coll of collections) {
@@ -326,7 +333,8 @@ export class DBStore {
         logbook: await this.mongoDb.collection<LogEntry>('logbook').find({}).toArray(),
         announcements: await this.mongoDb.collection<Announcement>('announcements').find({}).toArray(),
         interventions: await this.mongoDb.collection<Intervention>('interventions').find({}).toArray(),
-        bestPractices: await this.mongoDb.collection<BestPractice>('bestPractices').find({}).toArray()
+        bestPractices: await this.mongoDb.collection<BestPractice>('bestPractices').find({}).toArray(),
+        settings: await this.mongoDb.collection<SystemSettings>('settings').find({}).toArray()
       };
       console.log('[Database] MongoDB memory cache synchronized successfully.');
     } catch (err: any) {
@@ -361,6 +369,7 @@ export class DBStore {
     await this.mongoDb.collection('announcements').insertMany(seed.announcements);
     await this.mongoDb.collection('interventions').insertMany(seed.interventions);
     await this.mongoDb.collection('bestPractices').insertMany(seed.bestPractices);
+    await this.mongoDb.collection('settings').insertMany(seed.settings);
     console.log('[Database] MongoDB reset and re-seeded successfully.');
   }
 
@@ -388,6 +397,13 @@ export class DBStore {
   }
   async getWorksheets() {
     return await this.mongoDb!.collection<Worksheet>('worksheets').find({}).toArray();
+  }
+  async getSystemSettings() {
+    return await this.mongoDb!.collection<SystemSettings>('settings').find({}).toArray();
+  }
+  async updateSystemSettings(id: string, updates: Partial<SystemSettings>) {
+    await this.mongoDb!.collection('settings').updateOne({ id }, { $set: updates }, { upsert: true });
+    this.data.settings = await this.mongoDb!.collection<SystemSettings>('settings').find({}).toArray();
   }
   async getLevelWorksheets() {
     return await this.mongoDb!.collection<LevelWorksheet>('levelWorksheets').find({}).toArray();
@@ -560,6 +576,26 @@ export class DBStore {
       if (idx !== -1) this.data.bestPractices[idx] = bp;
     }
     return bp || undefined;
+  }
+
+  // --- Settings ---
+
+  async getSettings() {
+    return await this.mongoDb!.collection<SystemSettings>('settings').findOne({ id: 'global' });
+  }
+
+  async updateSettings(updates: Partial<SystemSettings>) {
+    await this.mongoDb!.collection('settings').updateOne({ id: 'global' }, { $set: updates }, { upsert: true });
+    const s = await this.mongoDb!.collection<SystemSettings>('settings').findOne({ id: 'global' });
+    if (s && this.data) {
+      const idx = this.data.settings.findIndex(x => x.id === 'global');
+      if (idx !== -1) {
+        this.data.settings[idx] = s;
+      } else {
+        this.data.settings.push(s);
+      }
+    }
+    return s || undefined;
   }
 
   // --- Preloaded Question Pool (Mathematical Curriculum Questions Classes 2-4) ---
@@ -2485,7 +2521,10 @@ export class DBStore {
       logbook,
       announcements,
       interventions,
-      bestPractices
+      bestPractices,
+      settings: [
+        { id: 'global', isImageOptimizationEnabled: true }
+      ]
     };
   }
 }
